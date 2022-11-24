@@ -253,13 +253,90 @@ void TxnProcessor::ApplyWrites(Txn* txn) {
 }
 
 void TxnProcessor::RunOCCScheduler() {
-  //
-  // Implement this method!
-  //
-  // [For now, run serial scheduler in order to make it through the test
-  // suite]
+  // jalankan OCC sampai tidak ada lagi transaksi yang berjalan di
+  // thread transaction processor
+  while(this->tp_.Active()){
+    // Ambil task terakhir yang ada di antrean transaksi pending
+    Txn *current_task;
+    // Kalau masih ada task yang masih bisa eksekusi, 
+    // eksekusi task tersebut
+    if(this->txn_requests_.Pop(&current_task)){
+      // Jalankan task tersebut
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
+            this,
+            &TxnProcessor::ExecuteTxn,
+            current_task));
 
-  RunSerialScheduler();
+      // RunTask sudah diimplementasikan oleh framework
+      // Setiap thread eksekusi dibuka, start time akan direkam
+      // setiap task akan memasuki read phase
+      // setiap read phase akan membaca data dari storage
+      // Selain itu, read phase juga 
+      // melakukan eksekusi transaksi 
+      // (misalnya manipulasi atau operasi terhadap data)
+    }
+
+    Txn *completed_task;
+    // Ambil task yang sudah selesai pada thread eksekusi
+    while(this->completed_txns_.Pop(&completed_task)){
+
+
+      if(completed_task->status_ == COMPLETED_A){
+        completed_task->status_ = ABORTED;
+        this->txn_results_.Push(completed_task);
+        continue;
+      }
+
+
+      bool validation = true;
+
+
+      // Periksa untuk setiap key yang ada di readset
+      // kalau ada yang perubahan terakhirnya (timestampnya)
+      // setelah start time transaksi yang lagi dicek
+      // validasi gagal
+      for(set<Key>::iterator it = completed_task->readset_.begin(); 
+          it != completed_task->readset_.end() && validation; 
+          ++it){
+        if(completed_task->occ_start_time_ < this->storage_->Timestamp(*it)){
+          validation = false;
+        }
+      }
+
+
+      // Periksa untuk setiap key yang ada di writeset
+      // kalau ada yang perubahan terakhirnya (timestampnya)
+      // setelah start time transaksi yang lagi dicek
+      // validasi gagal
+      for(set<Key>::iterator it = completed_task->writeset_.begin(); 
+          it != completed_task->writeset_.end() && validation; 
+          ++it){
+        if(completed_task->occ_start_time_ < this->storage_->Timestamp(*it)){
+          validation = false;
+        }
+      }
+      
+      if(!validation){
+        // Jika validasi gagal, maka transaksi akan diabort
+        completed_task->reads_.clear();
+        completed_task->writes_.clear();
+        completed_task->status_ = INCOMPLETE;
+
+        this->mutex_.Lock();
+        completed_task->unique_id_ = next_unique_id_;
+        next_unique_id_++;
+
+        this->txn_requests_.Push(completed_task);
+        this->mutex_.Unlock();
+      } else{
+        // Jika validasi berhasil, maka transaksi akan di commit
+        this->ApplyWrites(completed_task);
+        completed_task->status_ = COMMITTED;
+        this->txn_results_.Push(completed_task);
+      }
+    }
+  }
+  
 }
 
 void TxnProcessor::RunOCCParallelScheduler() {
