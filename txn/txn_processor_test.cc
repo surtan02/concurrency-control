@@ -79,9 +79,7 @@ void Benchmark(const vector<LoadGen*>& lg) {
   // For each MODE...
 
   // Ubah mode ini untuk menguji mode yang berbeda
-  for (CCMode mode = OCC;
-      mode <= OCC;
-      mode = static_cast<CCMode>(mode+1)) {
+  for (CCMode mode : {LOCKING_EXCLUSIVE_ONLY, OCC}) {
     // Print out mode name.
     cout << ModeToString(mode) << flush;
 
