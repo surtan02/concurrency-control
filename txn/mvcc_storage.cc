@@ -45,7 +45,6 @@ bool MVCCStorage::Read(Key key, Value* result, int txn_unique_id) {
   // Hint: Iterate the version_lists and return the verion whose write timestamp
   // (version_id) is the largest write timestamp less than or equal to txn_unique_id.
 
-  // Jika tidak ada data sesuai, false
   if (!mvcc_data_.count(key) || (*mvcc_data_[key]).empty()) return false;
 
   int max_version_id = 0;
@@ -60,7 +59,7 @@ bool MVCCStorage::Read(Key key, Value* result, int txn_unique_id) {
       }
     }
   }
-  return true;
+  return (max_version_id > 0)
 }
 
 
@@ -126,5 +125,3 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
   // mvcc_data_[key]->push_back(new_version);
   mvcc_data_[key]->push_front(new_version);
 }
-
-
