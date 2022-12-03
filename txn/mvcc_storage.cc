@@ -48,18 +48,23 @@ bool MVCCStorage::Read(Key key, Value* result, int txn_unique_id) {
   if (!mvcc_data_.count(key) || (*mvcc_data_[key]).empty()) return false;
 
   int max_version_id = 0;
+  Version* selected_version;
+
+  // Find max version
   for (auto& it : *mvcc_data_[key]) {
     if (it->version_id_ < max_version_id) continue;
     if (it->version_id_ <= txn_unique_id){
       *result = it->value_;
       max_version_id = it->version_id_;
-
-      if(it->max_read_id_ < txn_unique_id){
-        it->max_read_id_ = txn_unique_id;  
-      }
+      selected_version = it;
     }
   }
-  return (max_version_id > 0)
+
+  // Update read timestamp of selected version
+  if((max_version_id > 0) && (selected_version->max_read_id_ < txn_unique_id)){
+    selected_version->max_read_id_ = txn_unique_id;  
+  }
+  return (max_version_id > 0);
 }
 
 
@@ -90,7 +95,7 @@ bool MVCCStorage::CheckWrite(Key key, int txn_unique_id) {
 
   // Ti want to write, and Tk exist
   // RTS(Ti) < RTS(Tk)
-  return (max_read_id <= txn_unique_id);;
+  return (max_read_id <= txn_unique_id);
 }
 
 // MVCC Write, call this method only if CheckWrite return true.
@@ -110,6 +115,7 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
   
   if (mvcc_data_.count(key)) {
     int max_version_id = 0;
+    Version* selected_version;
     // iterate for max_version id
     for (auto it : *mvcc_data_[key]) {
       if (it->version_id_ < max_version_id) continue;
@@ -118,6 +124,13 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
         it->value_ = value;
       }
     }
+
+    // Update value of selected version
+    if((max_version_id > 0)){
+      selected_version->value_ = value;
+    }
+
+
   } else {
     mvcc_data_[key] = new std::deque<Version*>;
   }
