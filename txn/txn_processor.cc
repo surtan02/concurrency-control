@@ -15,12 +15,15 @@ TxnProcessor::TxnProcessor(CCMode mode)
   else if (mode_ == LOCKING)
     lm_ = new LockManagerB(&ready_txns_);
   
+  
+  
   // Create the storage
   if (mode_ == MVCC) {
     storage_ = new MVCCStorage();
   } else {
     storage_ = new Storage();
   }
+  
   
   storage_->InitStorage();
 
@@ -352,15 +355,96 @@ void TxnProcessor::RunOCCParallelScheduler() {
   RunSerialScheduler();
 }
 
+
 void TxnProcessor::RunMVCCScheduler() {
+  // CPSC 438/538:
   //
   // Implement this method!
   
   // Hint:Pop a txn from txn_requests_, and pass it to a thread to execute. 
   // Note that you may need to create another execute method, like TxnProcessor::MVCCExecuteTxn. 
   //
-  // [For now, run serial scheduler in order to make it through the test
-  // suite]
-  RunSerialScheduler();
+  // [For now, run serial scheduler in order to make it through the test suite]
+  Txn *txn;
+  while (tp_.Active()) {
+    // Get the next new transaction request (if one is pending) and pass it to an execution thread.
+    if (txn_requests_.Pop(&txn)) {
+      // Run thread.
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(this, &TxnProcessor::MVCCExecuteTxn, txn));
+    }
+  }
 }
 
+void TxnProcessor::MVCCExecuteTxn(Txn* txn) {
+  
+  // Read all necessary data for this transaction from storage 
+  // (Note that unlike the version of MVCC from class, you should lock the key before each read)
+  Value result;
+  for (Key element : txn->readset_) {
+    storage_->Lock(element);
+    if (storage_->Read(element, &result, txn->unique_id_)){
+      txn->reads_[element] = result;
+    }
+    storage_->Unlock(element);
+  }
+  
+  //   Execute the transaction logic (i.e. call Run() on the transaction)
+  txn->Run();
+
+  //   Acquire all locks for keys in the write_set_
+  MVCCLockWriteKeys(txn);
+  
+  //   Call MVCCStorage::CheckWrite method to check all keys in the write_set_
+  //   If (each key passed the check)
+  if (MVCCCheckWrites(txn)){
+    // apply the writes
+    completed_txns_.Push(txn);
+    ApplyWrites(txn);
+
+    //  Release all locks for the keys in the write_set_
+    MVCCUnlockWriteKeys(txn);
+
+    // Transaction is committed, add it to result
+    txn->status_ = COMMITTED;
+    txn_results_.Push(txn);
+
+  //   else if (at least one key failed the check)
+  } else{
+    //     Release all locks for keys in the write_set_
+    MVCCUnlockWriteKeys(txn);
+
+    // Cleanup txn
+    txn->reads_.clear();
+    txn->writes_.clear();
+    txn->status_ = INCOMPLETE;
+
+    // Completely restart the transaction.
+    mutex_.Lock();
+    txn->unique_id_ = next_unique_id_;
+    next_unique_id_++;
+    txn_requests_.Push(txn);
+    mutex_.Unlock();
+  }
+}
+
+bool TxnProcessor::MVCCCheckWrites(Txn* txn) {
+  for (Key element : txn->writeset_) {
+
+    // If atleast one key is Invalid
+    if (!(storage_->CheckWrite(element, txn->unique_id_)))
+      return false;
+  }
+  return true;
+}
+
+void TxnProcessor::MVCCLockWriteKeys(Txn* txn) {
+  for (Key element : txn->writeset_) {
+    storage_->Lock(element);
+  }
+}
+
+void TxnProcessor::MVCCUnlockWriteKeys(Txn* txn) {
+  for (Key element : txn->writeset_) {
+    storage_->Unlock(element);
+  }
+}
