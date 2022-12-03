@@ -117,19 +117,21 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
     int max_version_id = 0;
     Version* selected_version;
     // iterate for max_version id
-    for (auto it : *mvcc_data_[key]) {
+    // searching for Qk
+    for (auto& it : *mvcc_data_[key]) {
       if (it->version_id_ < max_version_id) continue;
       if (it->version_id_ <= txn_unique_id){
         max_version_id = it->version_id_;
-        it->value_ = value;
+        selected_version = it;
       }
     }
 
     // Update value of selected version
-    if((max_version_id > 0)){
+    // if Qk exists and it has equal timestamp with current timestamp, update its value
+    if((max_version_id > 0) && (selected_version->version_id_ == txn_unique_id)){
       selected_version->value_ = value;
+      return;
     }
-
 
   } else {
     mvcc_data_[key] = new std::deque<Version*>;
