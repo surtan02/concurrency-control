@@ -79,7 +79,7 @@ bool MVCCStorage::CheckWrite(Key key, int txn_unique_id) {
 
   int max_version_id = 0;
   int max_read_id = 0;
-  
+
   // iterate for max_version id
   for (auto element : *mvcc_data_[key]) {
     if (element->version_id_ < max_version_id) continue;
@@ -122,8 +122,8 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
     mvcc_data_[key] = new std::deque<Version*>;
   }
 
-  mvcc_data_[key]->push_back(new_version);
-  // mvcc_data_[key]->push_front(new_version);
+  // mvcc_data_[key]->push_back(new_version);
+  mvcc_data_[key]->push_front(new_version);
 }
 
 

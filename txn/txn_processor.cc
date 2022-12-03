@@ -15,15 +15,12 @@ TxnProcessor::TxnProcessor(CCMode mode)
   else if (mode_ == LOCKING)
     lm_ = new LockManagerB(&ready_txns_);
   
-  
-  
   // Create the storage
   if (mode_ == MVCC) {
     storage_ = new MVCCStorage();
   } else {
     storage_ = new Storage();
   }
-  
   
   storage_->InitStorage();
 
@@ -212,7 +209,6 @@ void TxnProcessor::RunLockingScheduler() {
             this,
             &TxnProcessor::ExecuteTxn,
             txn));
-
     }
   }
 }
@@ -355,10 +351,7 @@ void TxnProcessor::RunOCCParallelScheduler() {
   RunSerialScheduler();
 }
 
-
 void TxnProcessor::RunMVCCScheduler() {
-  // CPSC 438/538:
-  //
   // Implement this method!
   
   // Hint:Pop a txn from txn_requests_, and pass it to a thread to execute. 
@@ -379,13 +372,15 @@ void TxnProcessor::MVCCExecuteTxn(Txn* txn) {
   
   // Read all necessary data for this transaction from storage 
   // (Note that unlike the version of MVCC from class, you should lock the key before each read)
-  Value result;
-  for (Key element : txn->readset_) {
-    storage_->Lock(element);
-    if (storage_->Read(element, &result, txn->unique_id_)){
-      txn->reads_[element] = result;
+  for (set<Key>::iterator it = txn->readset_.begin();
+       it != txn->readset_.end(); ++it) {
+    // Save each read result iff record exists in storage.
+    Value result;
+    storage_->Lock(*it);
+    if (storage_->Read(*it, &result, txn->unique_id_)){
+      txn->reads_[*it] = result;
     }
-    storage_->Unlock(element);
+    storage_->Unlock(*it);
   }
   
   //   Execute the transaction logic (i.e. call Run() on the transaction)
@@ -428,23 +423,23 @@ void TxnProcessor::MVCCExecuteTxn(Txn* txn) {
 }
 
 bool TxnProcessor::MVCCCheckWrites(Txn* txn) {
-  for (Key element : txn->writeset_) {
-
+  for (set<Key>::iterator it = txn->writeset_.begin(); it != txn->writeset_.end(); ++it) {
     // If atleast one key is Invalid
-    if (!(storage_->CheckWrite(element, txn->unique_id_)))
+    if (!(storage_->CheckWrite(*it, txn->unique_id_))){
       return false;
+    }
   }
   return true;
 }
 
 void TxnProcessor::MVCCLockWriteKeys(Txn* txn) {
-  for (Key element : txn->writeset_) {
-    storage_->Lock(element);
+  for (set<Key>::iterator it = txn->writeset_.begin(); it != txn->writeset_.end(); ++it) {
+    storage_->Lock(*it);
   }
 }
 
 void TxnProcessor::MVCCUnlockWriteKeys(Txn* txn) {
-  for (Key element : txn->writeset_) {
-    storage_->Unlock(element);
+  for (set<Key>::iterator it = txn->writeset_.begin(); it != txn->writeset_.end(); ++it) {
+    storage_->Unlock(*it);
   }
 }
