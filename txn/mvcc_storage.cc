@@ -49,14 +49,14 @@ bool MVCCStorage::Read(Key key, Value* result, int txn_unique_id) {
   if (!mvcc_data_.count(key) || (*mvcc_data_[key]).empty()) return false;
 
   int max_version_id = 0;
-  for (auto& element : *mvcc_data_[key]) {
-    if (element->version_id_ < max_version_id) continue;
-    if (element->version_id_ <= txn_unique_id){
-      *result = element->value_;
-      max_version_id = element->version_id_;
+  for (auto& it : *mvcc_data_[key]) {
+    if (it->version_id_ < max_version_id) continue;
+    if (it->version_id_ <= txn_unique_id){
+      *result = it->value_;
+      max_version_id = it->version_id_;
 
-      if(element->max_read_id_ < txn_unique_id){
-        element->max_read_id_ = txn_unique_id;  
+      if(it->max_read_id_ < txn_unique_id){
+        it->max_read_id_ = txn_unique_id;  
       }
     }
   }
@@ -81,11 +81,11 @@ bool MVCCStorage::CheckWrite(Key key, int txn_unique_id) {
   int max_read_id = 0;
 
   // iterate for max_version id
-  for (auto element : *mvcc_data_[key]) {
-    if (element->version_id_ < max_version_id) continue;
-    if (element->version_id_ <= txn_unique_id){
-          max_version_id = element->version_id_;
-          max_read_id = element->max_read_id_;
+  for (auto it : *mvcc_data_[key]) {
+    if (it->version_id_ < max_version_id) continue;
+    if (it->version_id_ <= txn_unique_id){
+          max_version_id = it->version_id_;
+          max_read_id = it->max_read_id_;
     }
   }
 
@@ -102,6 +102,7 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
   // into the version_lists. Note that InitStorage() also calls this method to init storage. 
   // Note that you don't have to call Lock(key) in this method, just
   // call Lock(key) before you call this method and call Unlock(key) afterward.
+  // Note that the performance would be much better if you organize the versions in decreasing order.
   Version* new_version = new Version;
   
   new_version->value_ = value;
@@ -111,11 +112,11 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
   if (mvcc_data_.count(key)) {
     int max_version_id = 0;
     // iterate for max_version id
-    for (auto element : *mvcc_data_[key]) {
-      if (element->version_id_ < max_version_id) continue;
-      if (element->version_id_ <= txn_unique_id){
-        max_version_id = element->version_id_;
-        element->value_ = value;
+    for (auto it : *mvcc_data_[key]) {
+      if (it->version_id_ < max_version_id) continue;
+      if (it->version_id_ <= txn_unique_id){
+        max_version_id = it->version_id_;
+        it->value_ = value;
       }
     }
   } else {
